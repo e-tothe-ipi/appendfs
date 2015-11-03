@@ -26,7 +26,9 @@ func main() {
 		fmt.Printf("Mount fail: %v\n", err)
 		os.Exit(1)
 	}
-	conn := nodefs.NewFileSystemConnector(fs.Root(), nil)
+	options := nodefs.NewOptions()
+	options.Owner = nil
+	conn := nodefs.NewFileSystemConnector(fs.Root(), options)
 	server, err := fuse.NewServer(conn.RawFS(), mountPoint, nil)
 	if err != nil {
 		fmt.Printf("Mount fail: %v\n", err)

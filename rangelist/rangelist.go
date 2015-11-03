@@ -1,8 +1,7 @@
 package rangelist
 
 import (
-
-
+	"fmt"
 )
 
 
@@ -14,6 +13,10 @@ type RangeListEntry struct {
 	Min int
 	Max int
 	Data interface{}
+}
+
+func (entry RangeListEntry) String() string {
+	return fmt.Sprintf("{Min:%d, Max:%d, Data:%p}", entry.Min, entry.Max, entry.Data)
 }
 
 func (rl *RangeList) InRange(start int, end int) []*RangeListEntry {
@@ -33,24 +36,42 @@ func (rl *RangeList) Overwrite(newEntry *RangeListEntry) {
 	if rl.entries == nil {
 		rl.entries = make([]*RangeListEntry, 0)
 	}
-	pos := 0
-	for i, entry := range rl.entries {
+	oldEntries := make([]*RangeListEntry, len(rl.entries))
+	copy(oldEntries, rl.entries)
+	rl.entries = rl.entries[:0]
+	for _, entry := range oldEntries {
+		// Note: there is no case where there is both a split and a delete
 		if entry.Min >= newEntry.Min && entry.Max <= newEntry.Max {
 			// delete
-			rl.entries, rl.entries[len(rl.entries)-1] = append(rl.entries[:i], rl.entries[i+1:]...), nil
+		} else if entry.Min < newEntry.Min && newEntry.Max < entry.Max {
+			// split
+			newEntry2 := &RangeListEntry{Min:newEntry.Max + 1,
+							Max:entry.Max, Data:entry.Data}
+			entry.Max = newEntry.Min - 1
+			rl.entries = append(rl.entries, entry)
+			rl.entries = append(rl.entries, newEntry2)
 		} else if entry.Min < newEntry.Min && entry.Max > newEntry.Min {
 			entry.Max = newEntry.Min - 1
+			rl.entries = append(rl.entries, entry)
 		} else if entry.Max > newEntry.Max && entry.Min < newEntry.Max {
 			entry.Min = newEntry.Max + 1
+			rl.entries = append(rl.entries, entry)
+		} else {
+			rl.entries = append(rl.entries, entry)
 		}
 
-		if entry.Min < newEntry.Min {
-			pos = i
+	}
+	pos := 0
+	for i, entry := range rl.entries {
+		if newEntry.Min > entry.Min {
+			pos = i + 1
 		}
 	}
+
 	rl.entries = append(rl.entries, nil)
 	copy(rl.entries[pos+1:], rl.entries[pos:])
 	rl.entries[pos] = newEntry
+
 }
 
 func (entry *RangeListEntry) Length() int {
