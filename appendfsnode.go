@@ -79,11 +79,11 @@ func (node *AppendFSNode) Access(mode uint32, context *fuse.Context) (code fuse.
 
 	node.metadataMutex.RLock()
 	code = fuse.OK
-	if mode == fuse.F_OK {
-		if !getBit(&node.attr.Mode, fuse.S_IFREG){
-			code = fuse.EACCES
-		}
-	}
+	//if mode == fuse.F_OK {
+	//	if !getBit(&node.attr.Mode, fuse.S_IFREG){
+	//		code = fuse.EACCES
+	//	}
+	//}
 	if mode & fuse.R_OK > 0 {
 		if !( (node.attr.Uid == context.Uid && getBit(&node.attr.Mode, syscall.S_IRUSR)) ||
 		      (node.attr.Gid == context.Gid && getBit(&node.attr.Mode, syscall.S_IRGRP)) ||
@@ -263,8 +263,8 @@ func (node *AppendFSNode) Read(file nodefs.File, dest []byte, off int64, context
 		blockDest := dest[blockStart:blockEnd]
 		if fse, ok := entry.Data.(*fileSegmentEntry); ok {
 			readPos :=  int64(fse.fileOffset + (readStart - entry.Min))
-			fmt.Printf("fileOffset: %d, blockStart: %d, blockEnd: %d, readPos: %d, min: %d, max: %d\n", 
-				fse.fileOffset, blockStart, blockEnd, readPos, entry.Min, entry.Max)
+			//fmt.Printf("fileOffset: %d, blockStart: %d, blockEnd: %d, readPos: %d, min: %d, max: %d\n", 
+			//fse.fileOffset, blockStart, blockEnd, readPos, entry.Min, entry.Max)
 			_, err = dataFile.ReadAt(blockDest,readPos)
 			if err != nil {
 				fmt.Printf("Read error\n")
@@ -309,6 +309,7 @@ func (node *AppendFSNode) Write(file nodefs.File, data []byte, off int64, contex
 	}
 	return uint32(n), fuse.OK
 }
+
 
 func (node *AppendFSNode) GetXAttr(attribute string, context *fuse.Context) (data []byte, code fuse.Status) {
 	node.metadataMutex.RLock()
@@ -388,10 +389,14 @@ func (node *AppendFSNode) Chown(file nodefs.File, uid uint32, gid uint32, contex
 }
 
 func (node *AppendFSNode) Truncate(file nodefs.File, size uint64, context *fuse.Context) (code fuse.Status) {
-	node.metadataMutex.Lock()
-	node.contentRanges = rangelist.RangeList{}
-	node.metadataMutex.Unlock()
-	return fuse.OK
+	if size == 0 {
+		node.metadataMutex.Lock()
+		node.contentRanges = rangelist.RangeList{}
+		node.setSize(0)
+		node.metadataMutex.Unlock()
+		return fuse.OK
+	}
+	return fuse.ENOSYS
 }
 
 func (node *AppendFSNode) Utimens(file nodefs.File, atime *time.Time, mtime *time.Time, context *fuse.Context) (code fuse.Status) {

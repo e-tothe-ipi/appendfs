@@ -15,6 +15,13 @@ type RangeListEntry struct {
 	Data interface{}
 }
 
+
+func (rl *RangeList) PrintEntries() {
+	for _, entry := range rl.entries {
+		fmt.Printf("%s\n", entry.String())
+	}
+}
+
 func (entry RangeListEntry) String() string {
 	return fmt.Sprintf("{Min:%d, Max:%d, Data:%p}", entry.Min, entry.Max, entry.Data)
 }
