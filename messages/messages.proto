@@ -1,7 +1,27 @@
 syntax = "proto2";
 
-message FileSegment {
-	optional bytes contents = 1;
-	optional int64 file_id = 2;
-	optional int64 offset = 3;
+message FileMetadata {
+	required uint64  file_id = 1;
+	optional uint64  size = 2;
+	optional uint64  atime = 4;
+	optional uint64  mtime = 5;
+	optional uint64  ctime = 6;
+	optional FileMap contents = 7;
+	optional string  name = 20;
+	optional uint64  parent_file_id = 21;
+	optional uint32  uid = 22;
+	optional uint32  gid = 23;
+	optional uint32  nlink = 24;
+	optional uint32  mode = 25;
+	optional bytes   symlink = 26;
+}
+
+message FileMap {
+	repeated FileMapEntry entry = 1;
+}
+
+message FileMapEntry {
+	required uint64 start = 1;
+	required uint64 end = 2;
+	required uint64 base = 3;
 }

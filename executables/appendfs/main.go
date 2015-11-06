@@ -15,13 +15,13 @@ func main() {
 	// Scans the arg list and sets up flags
 	debug := flag.Bool("debug", false, "print debugging messages.")
 	flag.Parse()
-	if flag.NArg() < 2 {
-		fmt.Println("usage: inmemfs MOUNTPOINT")
+	if flag.NArg() < 3 {
+		fmt.Println("usage: appendfs <mountpoint> <datafile> <metadatafile>")
 		os.Exit(2)
 	}
 
 	mountPoint := flag.Arg(0)
-	fs, err := appendfs.NewAppendFS(flag.Arg(1))
+	fs, err := appendfs.NewAppendFS(flag.Arg(1), flag.Arg(2))
 	if err != nil {
 		fmt.Printf("Mount fail: %v\n", err)
 		os.Exit(1)

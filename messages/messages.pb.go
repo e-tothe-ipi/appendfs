@@ -9,7 +9,9 @@ It is generated from these files:
 	messages.proto
 
 It has these top-level messages:
-	FileSegment
+	FileMetadata
+	FileMap
+	FileMapEntry
 */
 package messages
 
@@ -22,34 +24,162 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
-type FileSegment struct {
-	Contents         []byte `protobuf:"bytes,1,opt,name=contents" json:"contents,omitempty"`
-	FileId           *int64 `protobuf:"varint,2,opt,name=file_id" json:"file_id,omitempty"`
-	Offset           *int64 `protobuf:"varint,3,opt,name=offset" json:"offset,omitempty"`
-	XXX_unrecognized []byte `json:"-"`
+type FileMetadata struct {
+	FileId           *uint64  `protobuf:"varint,1,req,name=file_id" json:"file_id,omitempty"`
+	Size             *uint64  `protobuf:"varint,2,opt,name=size" json:"size,omitempty"`
+	Atime            *uint64  `protobuf:"varint,4,opt,name=atime" json:"atime,omitempty"`
+	Mtime            *uint64  `protobuf:"varint,5,opt,name=mtime" json:"mtime,omitempty"`
+	Ctime            *uint64  `protobuf:"varint,6,opt,name=ctime" json:"ctime,omitempty"`
+	Contents         *FileMap `protobuf:"bytes,7,opt,name=contents" json:"contents,omitempty"`
+	Name             *string  `protobuf:"bytes,20,opt,name=name" json:"name,omitempty"`
+	ParentFileId     *uint64  `protobuf:"varint,21,opt,name=parent_file_id" json:"parent_file_id,omitempty"`
+	Uid              *uint32  `protobuf:"varint,22,opt,name=uid" json:"uid,omitempty"`
+	Gid              *uint32  `protobuf:"varint,23,opt,name=gid" json:"gid,omitempty"`
+	Nlink            *uint32  `protobuf:"varint,24,opt,name=nlink" json:"nlink,omitempty"`
+	Mode             *uint32  `protobuf:"varint,25,opt,name=mode" json:"mode,omitempty"`
+	Symlink          []byte   `protobuf:"bytes,26,opt,name=symlink" json:"symlink,omitempty"`
+	XXX_unrecognized []byte   `json:"-"`
 }
 
-func (m *FileSegment) Reset()         { *m = FileSegment{} }
-func (m *FileSegment) String() string { return proto.CompactTextString(m) }
-func (*FileSegment) ProtoMessage()    {}
+func (m *FileMetadata) Reset()         { *m = FileMetadata{} }
+func (m *FileMetadata) String() string { return proto.CompactTextString(m) }
+func (*FileMetadata) ProtoMessage()    {}
 
-func (m *FileSegment) GetContents() []byte {
-	if m != nil {
-		return m.Contents
-	}
-	return nil
-}
-
-func (m *FileSegment) GetFileId() int64 {
+func (m *FileMetadata) GetFileId() uint64 {
 	if m != nil && m.FileId != nil {
 		return *m.FileId
 	}
 	return 0
 }
 
-func (m *FileSegment) GetOffset() int64 {
-	if m != nil && m.Offset != nil {
-		return *m.Offset
+func (m *FileMetadata) GetSize() uint64 {
+	if m != nil && m.Size != nil {
+		return *m.Size
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetAtime() uint64 {
+	if m != nil && m.Atime != nil {
+		return *m.Atime
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetMtime() uint64 {
+	if m != nil && m.Mtime != nil {
+		return *m.Mtime
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetCtime() uint64 {
+	if m != nil && m.Ctime != nil {
+		return *m.Ctime
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetContents() *FileMap {
+	if m != nil {
+		return m.Contents
+	}
+	return nil
+}
+
+func (m *FileMetadata) GetName() string {
+	if m != nil && m.Name != nil {
+		return *m.Name
+	}
+	return ""
+}
+
+func (m *FileMetadata) GetParentFileId() uint64 {
+	if m != nil && m.ParentFileId != nil {
+		return *m.ParentFileId
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetUid() uint32 {
+	if m != nil && m.Uid != nil {
+		return *m.Uid
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetGid() uint32 {
+	if m != nil && m.Gid != nil {
+		return *m.Gid
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetNlink() uint32 {
+	if m != nil && m.Nlink != nil {
+		return *m.Nlink
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetMode() uint32 {
+	if m != nil && m.Mode != nil {
+		return *m.Mode
+	}
+	return 0
+}
+
+func (m *FileMetadata) GetSymlink() []byte {
+	if m != nil {
+		return m.Symlink
+	}
+	return nil
+}
+
+type FileMap struct {
+	Entry            []*FileMapEntry `protobuf:"bytes,1,rep,name=entry" json:"entry,omitempty"`
+	XXX_unrecognized []byte          `json:"-"`
+}
+
+func (m *FileMap) Reset()         { *m = FileMap{} }
+func (m *FileMap) String() string { return proto.CompactTextString(m) }
+func (*FileMap) ProtoMessage()    {}
+
+func (m *FileMap) GetEntry() []*FileMapEntry {
+	if m != nil {
+		return m.Entry
+	}
+	return nil
+}
+
+type FileMapEntry struct {
+	Start            *uint64 `protobuf:"varint,1,req,name=start" json:"start,omitempty"`
+	End              *uint64 `protobuf:"varint,2,req,name=end" json:"end,omitempty"`
+	Base             *uint64 `protobuf:"varint,3,req,name=base" json:"base,omitempty"`
+	XXX_unrecognized []byte  `json:"-"`
+}
+
+func (m *FileMapEntry) Reset()         { *m = FileMapEntry{} }
+func (m *FileMapEntry) String() string { return proto.CompactTextString(m) }
+func (*FileMapEntry) ProtoMessage()    {}
+
+func (m *FileMapEntry) GetStart() uint64 {
+	if m != nil && m.Start != nil {
+		return *m.Start
+	}
+	return 0
+}
+
+func (m *FileMapEntry) GetEnd() uint64 {
+	if m != nil && m.End != nil {
+		return *m.End
+	}
+	return 0
+}
+
+func (m *FileMapEntry) GetBase() uint64 {
+	if m != nil && m.Base != nil {
+		return *m.Base
 	}
 	return 0
 }

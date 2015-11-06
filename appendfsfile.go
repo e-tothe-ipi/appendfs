@@ -3,9 +3,12 @@ package appendfs
 import (
 	"fmt"
 	"time"
+	"sync"
 
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
+	"github.com/e-tothe-ipi/appendfs/messages"
+	"github.com/golang/protobuf/proto"
 )
 
 var _ nodefs.File = (*AppendFSFile)(nil)
@@ -13,6 +16,21 @@ var _ nodefs.File = (*AppendFSFile)(nil)
 type AppendFSFile struct {
 	node *AppendFSNode
 	flags uint32
+	metadataMutex sync.RWMutex
+	dirty bool
+}
+
+func (f *AppendFSFile) SetDirty(dirty bool) {
+	f.metadataMutex.Lock()
+	f.dirty = dirty
+	f.metadataMutex.Unlock()
+}
+
+func (f *AppendFSFile) Dirty() bool {
+	f.metadataMutex.RLock()
+	dirty := f.dirty
+	f.metadataMutex.RUnlock()
+	return dirty
 }
 
 func (node *AppendFSNode) createFile() *AppendFSFile {
@@ -49,7 +67,7 @@ func (f *AppendFSFile) Write(data []byte, off int64) (written uint32, code fuse.
 // case of duplicated descriptor, it may be called more than
 // once for a file.
 func (f *AppendFSFile) Flush() fuse.Status {
-	return fuse.OK
+	return f.Fsync(0)
 }
 
 // This is called to before the file handle is forgotten. This
@@ -61,6 +79,26 @@ func (f *AppendFSFile) Release() {
 }
 
 func (f *AppendFSFile) Fsync(flags int) (code fuse.Status) {
+	if(f.Dirty()) {
+		metadata := &messages.FileMetadata{FileId:&f.node.fileId,
+											Contents:&messages.FileMap{},
+											Size:&f.node.attr.Size}
+		rlEntries := f.node.contentRanges.InRange(0, int(f.node.attr.Size))
+		metadata.Contents.Entry = make([]*messages.FileMapEntry,0,len(rlEntries))
+		for _, entry := range rlEntries {
+			if fData, ok := entry.Data.(fileSegmentEntry); ok {
+				newEntry := &messages.FileMapEntry{Start:proto.Uint64(uint64(entry.Min)),
+													End:proto.Uint64(uint64(entry.Max)),
+													Base:proto.Uint64(uint64(fData.fileOffset))}
+				metadata.Contents.Entry = append(metadata.Contents.Entry, newEntry)
+			}
+		}
+		err := f.node.fs.AppendMetadata(metadata)
+		if (err != nil) {
+			fmt.Println(err)
+			return fuse.EIO
+		}
+	}
 	return fuse.OK
 }
 

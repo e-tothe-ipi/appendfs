@@ -9,13 +9,17 @@ import (
 
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/hanwen/go-fuse/fuse/nodefs"
+	"github.com/e-tothe-ipi/appendfs/messages"
 	"github.com/e-tothe-ipi/appendfs/rangelist"
 )
 
 type AppendFSNode struct {
 	fs *AppendFS
+	fileId uint64
+	parentFileId uint64
 	inode *nodefs.Inode
 	metadataMutex sync.RWMutex
+	name string
 	attr fuse.Attr
 	xattr map[string][]byte
 	contentRanges rangelist.RangeList
@@ -44,6 +48,12 @@ func (node *AppendFSNode) SetInode(inode *nodefs.Inode) {
 
 func (node *AppendFSNode) OnMount(conn *nodefs.FileSystemConnector) {
 	fmt.Printf("Mounted\n")
+	if node == node.fs.root {
+		err := node.fs.LoadMetadata()
+		if err != nil {
+			panic(err)
+		}
+	}
 }
 
 func (node *AppendFSNode) OnUnmount() {
@@ -129,9 +139,10 @@ func (parent *AppendFSNode) Mkdir(name string, mode uint32, context *fuse.Contex
 	if parent.Inode().GetChild(name) != nil {
 		return nil, fuse.Status(syscall.EEXIST)
 	}
-	node := parent.fs.createNode()
+	node := parent.fs.createNode(parent)
 	node.attr.Mode = mode | fuse.S_IFDIR
 	node.attr.Nlink = 2
+	node.name = name
 	inode := parent.inode.NewChild(name, true, node)
 	parent.incrementLinks()
 	return inode, fuse.OK
@@ -162,11 +173,12 @@ func (parent *AppendFSNode) Symlink(name string, content string, context *fuse.C
 	if parent.Inode().GetChild(name) != nil {
 		return nil, fuse.Status(syscall.EEXIST)
 	}
-	node := parent.fs.createNode()
+	node := parent.fs.createNode(parent)
 	node.attr.Mode = 0777 | fuse.S_IFLNK
 	contentBytes := []byte(content)
 	node.setSize(uint64(len(contentBytes)))
 	node.symlink = contentBytes
+	node.name = name
 	parent.Inode().NewChild(name, false, node)
 	parent.incrementLinks()
 	return node.Inode(), fuse.OK
@@ -198,16 +210,55 @@ func (node *AppendFSNode) Link(name string, existing nodefs.Node, context *fuse.
 	return existing.Inode(), fuse.OK
 }
 
+func (node *AppendFSNode) AsFileMetadata() *messages.FileMetadata {
+	metadata := &messages.FileMetadata{FileId:&node.fileId, Mode:&node.attr.Mode,
+					Uid:&node.attr.Uid, Gid:&node.attr.Gid, ParentFileId:&node.parentFileId,
+					Atime:&node.attr.Atime, Mtime:&node.attr.Mtime, Ctime:&node.attr.Ctime,
+					Name:&node.name, Nlink:&node.attr.Nlink}
+	return metadata
+}
+
+func FromFileMetadata(fs *AppendFS, md *messages.FileMetadata) (*AppendFSNode) {
+	node := &AppendFSNode{fileId:md.GetFileId(), parentFileId:md.GetParentFileId(),
+							name:md.GetName()}
+	node.attr.Uid = md.GetUid()
+	node.attr.Gid = md.GetGid()
+	node.attr.Mode = md.GetMode()
+	node.attr.Atime = md.GetAtime()
+	node.attr.Mtime = md.GetMtime()
+	node.attr.Ctime = md.GetCtime()
+	node.attr.Nlink = md.GetNlink()
+	node.attr.Size = md.GetSize()
+	node.symlink = md.GetSymlink()
+	node.fs = fs
+	node.attr.Blksize = fs.blockSize
+	for _, entry := range md.GetContents().GetEntry() {
+		fData := fileSegmentEntry{fileOffset:int(entry.GetBase())}
+		node.contentRanges.Overwrite(&rangelist.RangeListEntry{Min:int(entry.GetStart()),
+																Max:int(entry.GetEnd()),
+																Data:fData})
+
+	}
+	return node
+}
+
 func (parent *AppendFSNode) Create(name string, flags uint32, mode uint32, context *fuse.Context) (file nodefs.File, child *nodefs.Inode, code fuse.Status) {
 	if parent.Inode().GetChild(name) != nil {
 		return nil, nil, fuse.Status(syscall.EEXIST)
 	}
-	node := parent.fs.createNode()
+	node := parent.fs.createNode(parent)
 	node.attr.Mode = mode | fuse.S_IFREG
 	node.attr.Uid = context.Uid
 	node.attr.Gid = context.Gid
+	node.name = name
 	parent.Inode().NewChild(name, false, node)
 	parent.incrementLinks()
+
+	err := node.fs.AppendMetadata(node.AsFileMetadata())
+	if err != nil {
+		return nil, nil, fuse.EIO
+	}
+
 	f, openStatus := node.Open(flags, context)
 	if openStatus != fuse.OK {
 		return nil, nil, openStatus
@@ -300,19 +351,20 @@ func (node *AppendFSNode) setSize(size uint64) {
 }
 
 func (node *AppendFSNode) Write(file nodefs.File, data []byte, off int64, context *fuse.Context) (written uint32, code fuse.Status) {
-	node.fs.dataMutex.Lock()
-	n, err := node.fs.dataFile.Write(data)
-	node.fs.dataFileOffset += n
-	node.fs.dataMutex.Unlock()
+	if f, ok := file.(*AppendFSFile); ok {
+		f.SetDirty(true)
+	}
+	pos, err := node.fs.AppendData(data)
+	if err != nil {
+		return 0, fuse.EIO
+	}
+	n := len(data)
 	node.metadataMutex.Lock()
 	node.contentRanges.Overwrite(&rangelist.RangeListEntry{Min:int(off),
 			Max:int(off) + n - 1,
-			Data:fileSegmentEntry{fileOffset: node.fs.dataFileOffset - n - int(off)}})
+			Data:fileSegmentEntry{fileOffset: pos - int(off)}})
 	node.setSize(uint64(max(int(node.attr.Size), len(data) + int(off))))
 	node.metadataMutex.Unlock()
-	if err != nil {
-		return uint32(n), fuse.EIO
-	}
 	return uint32(n), fuse.OK
 }
 
