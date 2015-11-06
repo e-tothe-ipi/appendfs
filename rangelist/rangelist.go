@@ -43,6 +43,13 @@ func (rl *RangeList) Overwrite(newEntry *RangeListEntry) {
 	if rl.entries == nil {
 		rl.entries = make([]*RangeListEntry, 0)
 	}
+	for i, entry := range rl.entries {
+		if newEntry.Min == entry.Max + 1 && newEntry.Data == entry.Data && (i == len(rl.entries) - 1 || newEntry.Max < rl.entries[i+1].Min) {
+			entry.Max = newEntry.Max
+			return
+		}
+	}
+
 	oldEntries := make([]*RangeListEntry, len(rl.entries))
 	copy(oldEntries, rl.entries)
 	rl.entries = rl.entries[:0]

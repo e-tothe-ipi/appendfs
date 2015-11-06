@@ -64,7 +64,10 @@ func (parent *AppendFSNode) Lookup(out *fuse.Attr, name string, context *fuse.Co
 }
 
 func (node *AppendFSNode) Deletable() bool {
-	return true
+	node.metadataMutex.RLock()
+	deletable := node.attr.Nlink == 0
+	node.metadataMutex.RUnlock()
+	return deletable
 }
 
 const (
@@ -123,6 +126,9 @@ func (node *AppendFSNode) Mknod(name string, mode uint32, dev uint32, context *f
 }
 
 func (parent *AppendFSNode) Mkdir(name string, mode uint32, context *fuse.Context) (newNode *nodefs.Inode, code fuse.Status) {
+	if parent.Inode().GetChild(name) != nil {
+		return nil, fuse.Status(syscall.EEXIST)
+	}
 	node := parent.fs.createNode()
 	node.attr.Mode = mode | fuse.S_IFDIR
 	node.attr.Nlink = 2
@@ -136,7 +142,6 @@ func (node *AppendFSNode) Unlink(name string, context *fuse.Context) (code fuse.
 	if(child == nil) {
 		return fuse.ENOENT
 	}
-	node.Inode().RmChild(name)
 	if appendfsChild, ok := child.Node().(*AppendFSNode); ok {
 		appendfsChild.decrementLinks()
 		appendfsChild.metadataMutex.RLock()
@@ -145,6 +150,7 @@ func (node *AppendFSNode) Unlink(name string, context *fuse.Context) (code fuse.
 		}
 		appendfsChild.metadataMutex.RUnlock()
 	}
+	node.Inode().RmChild(name)
 	return fuse.OK
 }
 
@@ -261,8 +267,8 @@ func (node *AppendFSNode) Read(file nodefs.File, dest []byte, off int64, context
 		readStart, readEnd := max(entry.Min, start), min(entry.Max, end) + 1
 		blockStart, blockEnd := readStart - int(off), readEnd - int(off)
 		blockDest := dest[blockStart:blockEnd]
-		if fse, ok := entry.Data.(*fileSegmentEntry); ok {
-			readPos :=  int64(fse.fileOffset + (readStart - entry.Min))
+		if fse, ok := entry.Data.(fileSegmentEntry); ok {
+			readPos :=  int64(fse.fileOffset + readStart)
 			//fmt.Printf("fileOffset: %d, blockStart: %d, blockEnd: %d, readPos: %d, min: %d, max: %d\n", 
 			//fse.fileOffset, blockStart, blockEnd, readPos, entry.Min, entry.Max)
 			_, err = dataFile.ReadAt(blockDest,readPos)
@@ -301,7 +307,7 @@ func (node *AppendFSNode) Write(file nodefs.File, data []byte, off int64, contex
 	node.metadataMutex.Lock()
 	node.contentRanges.Overwrite(&rangelist.RangeListEntry{Min:int(off),
 			Max:int(off) + n - 1,
-			Data:&fileSegmentEntry{fileOffset: node.fs.dataFileOffset - n}})
+			Data:fileSegmentEntry{fileOffset: node.fs.dataFileOffset - n - int(off)}})
 	node.setSize(uint64(max(int(node.attr.Size), len(data) + int(off))))
 	node.metadataMutex.Unlock()
 	if err != nil {
