@@ -8,7 +8,7 @@ Note: currently, there is no way to save the filesystem metadata, so as soon as 
 
 To run:
 	
-	inmemfs [-debug] <mountpoint> <backerfile> &
+	appendfs [-debug] <mountpoint> <backerfile> &
 
 To stop:
 
