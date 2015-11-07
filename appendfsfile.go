@@ -33,7 +33,7 @@ func (f *AppendFSFile) Dirty() bool {
 	return dirty
 }
 
-func (node *AppendFSNode) createFile() *AppendFSFile {
+func CreateFile(node *AppendFSNode) *AppendFSFile {
 	return &AppendFSFile{node: node}
 }
 

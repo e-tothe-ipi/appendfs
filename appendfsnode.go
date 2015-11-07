@@ -60,6 +60,53 @@ func (node *AppendFSNode) OnUnmount() {
 	fmt.Printf("Unmounted\n")
 }
 
+func CreateNode(parent *AppendFSNode) *AppendFSNode {
+	node := &AppendFSNode{}
+	now := time.Now()
+	node.attr.SetTimes(&now, &now, &now)
+	node.attr.Nlink = 1
+	node.xattr = make(map[string][]byte)
+	if parent != nil {
+		node.parentFileId = parent.fileId
+		node.fs = parent.fs
+		node.fileId = node.fs.NextFileId()
+		node.attr.Blksize = node.fs.blockSize
+	}
+	return node
+}
+
+func (node *AppendFSNode) AsFileMetadata() *messages.FileMetadata {
+	metadata := &messages.FileMetadata{FileId:&node.fileId, Mode:&node.attr.Mode,
+					Uid:&node.attr.Uid, Gid:&node.attr.Gid, ParentFileId:&node.parentFileId,
+					Atime:&node.attr.Atime, Mtime:&node.attr.Mtime, Ctime:&node.attr.Ctime,
+					Name:&node.name, Nlink:&node.attr.Nlink}
+	return metadata
+}
+
+func FromFileMetadata(fs *AppendFS, md *messages.FileMetadata) (*AppendFSNode) {
+	node := &AppendFSNode{fileId:md.GetFileId(), parentFileId:md.GetParentFileId(),
+							name:md.GetName()}
+	node.attr.Uid = md.GetUid()
+	node.attr.Gid = md.GetGid()
+	node.attr.Mode = md.GetMode()
+	node.attr.Atime = md.GetAtime()
+	node.attr.Mtime = md.GetMtime()
+	node.attr.Ctime = md.GetCtime()
+	node.attr.Nlink = md.GetNlink()
+	node.attr.Size = md.GetSize()
+	node.symlink = md.GetSymlink()
+	node.fs = fs
+	node.attr.Blksize = fs.blockSize
+	for _, entry := range md.GetContents().GetEntry() {
+		fData := fileSegmentEntry{fileOffset:int(entry.GetBase())}
+		node.contentRanges.Overwrite(&rangelist.RangeListEntry{Min:int(entry.GetStart()),
+																Max:int(entry.GetEnd()),
+																Data:fData})
+
+	}
+	return node
+}
+
 func (parent *AppendFSNode) Lookup(out *fuse.Attr, name string, context *fuse.Context) (*nodefs.Inode, fuse.Status) {
 	child := parent.inode.GetChild(name)
 	if child != nil {
@@ -80,10 +127,6 @@ func (node *AppendFSNode) Deletable() bool {
 	return deletable
 }
 
-const (
-	NODE_SIZE_GC_THRESHOLD = 1 * 1024 * 1024 // 1MB
-)
-
 func (node *AppendFSNode) OnForget() {
 }
 
@@ -92,11 +135,6 @@ func (node *AppendFSNode) Access(mode uint32, context *fuse.Context) (code fuse.
 
 	node.metadataMutex.RLock()
 	code = fuse.OK
-	//if mode == fuse.F_OK {
-	//	if !getBit(&node.attr.Mode, fuse.S_IFREG){
-	//		code = fuse.EACCES
-	//	}
-	//}
 	if mode & fuse.R_OK > 0 {
 		if !( (node.attr.Uid == context.Uid && getBit(&node.attr.Mode, syscall.S_IRUSR)) ||
 		      (node.attr.Gid == context.Gid && getBit(&node.attr.Mode, syscall.S_IRGRP)) ||
@@ -139,7 +177,7 @@ func (parent *AppendFSNode) Mkdir(name string, mode uint32, context *fuse.Contex
 	if parent.Inode().GetChild(name) != nil {
 		return nil, fuse.Status(syscall.EEXIST)
 	}
-	node := parent.fs.createNode(parent)
+	node := CreateNode(parent)
 	node.attr.Mode = mode | fuse.S_IFDIR
 	node.attr.Nlink = 2
 	node.name = name
@@ -173,7 +211,7 @@ func (parent *AppendFSNode) Symlink(name string, content string, context *fuse.C
 	if parent.Inode().GetChild(name) != nil {
 		return nil, fuse.Status(syscall.EEXIST)
 	}
-	node := parent.fs.createNode(parent)
+	node := CreateNode(parent)
 	node.attr.Mode = 0777 | fuse.S_IFLNK
 	contentBytes := []byte(content)
 	node.setSize(uint64(len(contentBytes)))
@@ -210,43 +248,12 @@ func (node *AppendFSNode) Link(name string, existing nodefs.Node, context *fuse.
 	return existing.Inode(), fuse.OK
 }
 
-func (node *AppendFSNode) AsFileMetadata() *messages.FileMetadata {
-	metadata := &messages.FileMetadata{FileId:&node.fileId, Mode:&node.attr.Mode,
-					Uid:&node.attr.Uid, Gid:&node.attr.Gid, ParentFileId:&node.parentFileId,
-					Atime:&node.attr.Atime, Mtime:&node.attr.Mtime, Ctime:&node.attr.Ctime,
-					Name:&node.name, Nlink:&node.attr.Nlink}
-	return metadata
-}
-
-func FromFileMetadata(fs *AppendFS, md *messages.FileMetadata) (*AppendFSNode) {
-	node := &AppendFSNode{fileId:md.GetFileId(), parentFileId:md.GetParentFileId(),
-							name:md.GetName()}
-	node.attr.Uid = md.GetUid()
-	node.attr.Gid = md.GetGid()
-	node.attr.Mode = md.GetMode()
-	node.attr.Atime = md.GetAtime()
-	node.attr.Mtime = md.GetMtime()
-	node.attr.Ctime = md.GetCtime()
-	node.attr.Nlink = md.GetNlink()
-	node.attr.Size = md.GetSize()
-	node.symlink = md.GetSymlink()
-	node.fs = fs
-	node.attr.Blksize = fs.blockSize
-	for _, entry := range md.GetContents().GetEntry() {
-		fData := fileSegmentEntry{fileOffset:int(entry.GetBase())}
-		node.contentRanges.Overwrite(&rangelist.RangeListEntry{Min:int(entry.GetStart()),
-																Max:int(entry.GetEnd()),
-																Data:fData})
-
-	}
-	return node
-}
 
 func (parent *AppendFSNode) Create(name string, flags uint32, mode uint32, context *fuse.Context) (file nodefs.File, child *nodefs.Inode, code fuse.Status) {
 	if parent.Inode().GetChild(name) != nil {
 		return nil, nil, fuse.Status(syscall.EEXIST)
 	}
-	node := parent.fs.createNode(parent)
+	node := CreateNode(parent)
 	node.attr.Mode = mode | fuse.S_IFREG
 	node.attr.Uid = context.Uid
 	node.attr.Gid = context.Gid
@@ -267,7 +274,7 @@ func (parent *AppendFSNode) Create(name string, flags uint32, mode uint32, conte
 }
 
 func (node *AppendFSNode) Open(flags uint32, context *fuse.Context) (file nodefs.File, code fuse.Status) {
-	f := node.createFile()
+	f := CreateFile(node)
 	f.flags = flags
 	return f, fuse.OK
 }

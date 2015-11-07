@@ -1,7 +1,6 @@
 package appendfs
 
 import (
-	"time"
 	"os"
 	"sync"
 	"errors"
@@ -23,10 +22,6 @@ func NewAppendFS(dataFilePath string, metadataFilePath string) (*AppendFS, error
 	if err != nil {
 		return nil, err
 	}
-	//err = dataFile.Truncate(0)
-	//if err != nil {
-	//	return nil, err
-	//}
 	dataFileStat, err := dataFile.Stat()
 	if err != nil {
 		return nil, err
@@ -38,12 +33,8 @@ func NewAppendFS(dataFilePath string, metadataFilePath string) (*AppendFS, error
 	if err != nil {
 		return nil, err
 	}
-	//err = metadataFile.Truncate(0)
-	//if err != nil {
-	//	return nil, err
-	//}
 	fs.metadataFile = metadataFile
-	fs.root = fs.createNode(nil)
+	fs.root = CreateNode(nil)
 	fs.root.attr.Mode = fuse.S_IFDIR | 0755
 	fs.root.attr.Nlink = 2
 	return fs, nil
@@ -67,21 +58,12 @@ func (fs *AppendFS) Root() *AppendFSNode {
 	return fs.root
 }
 
-func (fs *AppendFS) createNode(parent *AppendFSNode) *AppendFSNode {
-	node := &AppendFSNode{fs: fs,}
-	now := time.Now()
-	node.attr.SetTimes(&now, &now, &now)
-	node.attr.Nlink = 1
-	node.attr.Blksize = fs.blockSize
-	node.xattr = make(map[string][]byte)
-	if parent != nil {
-		node.parentFileId = parent.fileId
-	}
+func (fs *AppendFS) NextFileId() uint64 {
 	fs.fileIdMutex.Lock()
-	node.fileId = fs.lastFileId + 1
-	fs.lastFileId = node.fileId
+	fs.lastFileId += 1
+	out := fs.lastFileId
 	fs.fileIdMutex.Unlock()
-	return node
+	return out
 }
 
 func (fs *AppendFS) AppendData(data []byte) (int, error) {
