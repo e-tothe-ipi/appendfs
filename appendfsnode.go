@@ -15,8 +15,8 @@ import (
 
 type AppendFSNode struct {
 	fs *AppendFS
-	fileId uint64
-	parentFileId uint64
+	nodeId uint64
+	parentNodeId uint64
 	inode *nodefs.Inode
 	metadataMutex sync.RWMutex
 	name string
@@ -24,6 +24,10 @@ type AppendFSNode struct {
 	xattr map[string][]byte
 	contentRanges rangelist.RangeList
 	symlink	[]byte
+}
+
+type fileSegmentEntry struct {
+	base int
 }
 
 func (node *AppendFSNode) incrementLinks() {
@@ -67,24 +71,24 @@ func CreateNode(parent *AppendFSNode) *AppendFSNode {
 	node.attr.Nlink = 1
 	node.xattr = make(map[string][]byte)
 	if parent != nil {
-		node.parentFileId = parent.fileId
+		node.parentNodeId = parent.nodeId
 		node.fs = parent.fs
-		node.fileId = node.fs.NextFileId()
+		node.nodeId = node.fs.NextNodeId()
 		node.attr.Blksize = node.fs.blockSize
 	}
 	return node
 }
 
-func (node *AppendFSNode) AsFileMetadata() *messages.FileMetadata {
-	metadata := &messages.FileMetadata{FileId:&node.fileId, Mode:&node.attr.Mode,
-					Uid:&node.attr.Uid, Gid:&node.attr.Gid, ParentFileId:&node.parentFileId,
+func (node *AppendFSNode) AsNodeMetadata() *messages.NodeMetadata {
+	metadata := &messages.NodeMetadata{NodeId:&node.nodeId, Mode:&node.attr.Mode,
+					Uid:&node.attr.Uid, Gid:&node.attr.Gid, ParentNodeId:&node.parentNodeId,
 					Atime:&node.attr.Atime, Mtime:&node.attr.Mtime, Ctime:&node.attr.Ctime,
 					Name:&node.name, Nlink:&node.attr.Nlink}
 	return metadata
 }
 
-func FromFileMetadata(fs *AppendFS, md *messages.FileMetadata) (*AppendFSNode) {
-	node := &AppendFSNode{fileId:md.GetFileId(), parentFileId:md.GetParentFileId(),
+func FromNodeMetadata(fs *AppendFS, md *messages.NodeMetadata) (*AppendFSNode) {
+	node := &AppendFSNode{nodeId:md.GetNodeId(), parentNodeId:md.GetParentNodeId(),
 							name:md.GetName()}
 	node.attr.Uid = md.GetUid()
 	node.attr.Gid = md.GetGid()
@@ -98,7 +102,7 @@ func FromFileMetadata(fs *AppendFS, md *messages.FileMetadata) (*AppendFSNode) {
 	node.fs = fs
 	node.attr.Blksize = fs.blockSize
 	for _, entry := range md.GetContents().GetEntry() {
-		fData := fileSegmentEntry{fileOffset:int(entry.GetBase())}
+		fData := fileSegmentEntry{base:int(entry.GetBase())}
 		node.contentRanges.Overwrite(&rangelist.RangeListEntry{Min:int(entry.GetStart()),
 																Max:int(entry.GetEnd()),
 																Data:fData})
@@ -261,7 +265,7 @@ func (parent *AppendFSNode) Create(name string, flags uint32, mode uint32, conte
 	parent.Inode().NewChild(name, false, node)
 	parent.incrementLinks()
 
-	err := node.fs.AppendMetadata(node.AsFileMetadata())
+	err := node.fs.AppendMetadata(node.AsNodeMetadata())
 	if err != nil {
 		return nil, nil, fuse.EIO
 	}
@@ -292,25 +296,6 @@ func (node *AppendFSNode) OpenDir(context *fuse.Context) ([]fuse.DirEntry, fuse.
 	return ls, fuse.OK
 }
 
-type fileSegmentEntry struct {
-	fileOffset int
-}
-
-func min(a int, b int) int {
-	if a < b {
-		return a
-	} else {
-		return b
-	}
-}
-
-func max(a int, b int) int {
-	if a > b {
-		return a
-	} else {
-		return b
-	}
-}
 
 func (node *AppendFSNode) Read(file nodefs.File, dest []byte, off int64, context *fuse.Context) (fuse.ReadResult, fuse.Status) {
 	ret := fuse.OK
@@ -326,7 +311,7 @@ func (node *AppendFSNode) Read(file nodefs.File, dest []byte, off int64, context
 		blockStart, blockEnd := readStart - int(off), readEnd - int(off)
 		blockDest := dest[blockStart:blockEnd]
 		if fse, ok := entry.Data.(fileSegmentEntry); ok {
-			readPos :=  int64(fse.fileOffset + readStart)
+			readPos :=  int64(fse.base + readStart)
 			//fmt.Printf("fileOffset: %d, blockStart: %d, blockEnd: %d, readPos: %d, min: %d, max: %d\n", 
 			//fse.fileOffset, blockStart, blockEnd, readPos, entry.Min, entry.Max)
 			_, err = dataFile.ReadAt(blockDest,readPos)
@@ -369,7 +354,7 @@ func (node *AppendFSNode) Write(file nodefs.File, data []byte, off int64, contex
 	node.metadataMutex.Lock()
 	node.contentRanges.Overwrite(&rangelist.RangeListEntry{Min:int(off),
 			Max:int(off) + n - 1,
-			Data:fileSegmentEntry{fileOffset: pos - int(off)}})
+			Data:fileSegmentEntry{base: pos - int(off)}})
 	node.setSize(uint64(max(int(node.attr.Size), len(data) + int(off))))
 	node.metadataMutex.Unlock()
 	return uint32(n), fuse.OK
@@ -421,14 +406,6 @@ func (node *AppendFSNode) GetAttr(out *fuse.Attr, file nodefs.File, context *fus
 	return fuse.OK
 }
 
-func setBit(attr *uint32, mask uint32, field uint32) {
-	*attr &= ^mask
-	*attr |= (mask & field)
-}
-
-func getBit(attr *uint32, mask uint32) bool {
-	return *attr & mask > 0
-}
 
 func (node *AppendFSNode) Chmod(file nodefs.File, perms uint32, context *fuse.Context) (code fuse.Status) {
 	node.metadataMutex.Lock()

@@ -9,7 +9,7 @@ It is generated from these files:
 	messages.proto
 
 It has these top-level messages:
-	FileMetadata
+	NodeMetadata
 	FileMap
 	FileMapEntry
 */
@@ -24,15 +24,15 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
-type FileMetadata struct {
-	FileId           *uint64  `protobuf:"varint,1,req,name=file_id" json:"file_id,omitempty"`
+type NodeMetadata struct {
+	NodeId           *uint64  `protobuf:"varint,1,req,name=node_id" json:"node_id,omitempty"`
 	Size             *uint64  `protobuf:"varint,2,opt,name=size" json:"size,omitempty"`
 	Atime            *uint64  `protobuf:"varint,4,opt,name=atime" json:"atime,omitempty"`
 	Mtime            *uint64  `protobuf:"varint,5,opt,name=mtime" json:"mtime,omitempty"`
 	Ctime            *uint64  `protobuf:"varint,6,opt,name=ctime" json:"ctime,omitempty"`
 	Contents         *FileMap `protobuf:"bytes,7,opt,name=contents" json:"contents,omitempty"`
 	Name             *string  `protobuf:"bytes,20,opt,name=name" json:"name,omitempty"`
-	ParentFileId     *uint64  `protobuf:"varint,21,opt,name=parent_file_id" json:"parent_file_id,omitempty"`
+	ParentNodeId     *uint64  `protobuf:"varint,21,opt,name=parent_node_id" json:"parent_node_id,omitempty"`
 	Uid              *uint32  `protobuf:"varint,22,opt,name=uid" json:"uid,omitempty"`
 	Gid              *uint32  `protobuf:"varint,23,opt,name=gid" json:"gid,omitempty"`
 	Nlink            *uint32  `protobuf:"varint,24,opt,name=nlink" json:"nlink,omitempty"`
@@ -41,95 +41,95 @@ type FileMetadata struct {
 	XXX_unrecognized []byte   `json:"-"`
 }
 
-func (m *FileMetadata) Reset()         { *m = FileMetadata{} }
-func (m *FileMetadata) String() string { return proto.CompactTextString(m) }
-func (*FileMetadata) ProtoMessage()    {}
+func (m *NodeMetadata) Reset()         { *m = NodeMetadata{} }
+func (m *NodeMetadata) String() string { return proto.CompactTextString(m) }
+func (*NodeMetadata) ProtoMessage()    {}
 
-func (m *FileMetadata) GetFileId() uint64 {
-	if m != nil && m.FileId != nil {
-		return *m.FileId
+func (m *NodeMetadata) GetNodeId() uint64 {
+	if m != nil && m.NodeId != nil {
+		return *m.NodeId
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetSize() uint64 {
+func (m *NodeMetadata) GetSize() uint64 {
 	if m != nil && m.Size != nil {
 		return *m.Size
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetAtime() uint64 {
+func (m *NodeMetadata) GetAtime() uint64 {
 	if m != nil && m.Atime != nil {
 		return *m.Atime
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetMtime() uint64 {
+func (m *NodeMetadata) GetMtime() uint64 {
 	if m != nil && m.Mtime != nil {
 		return *m.Mtime
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetCtime() uint64 {
+func (m *NodeMetadata) GetCtime() uint64 {
 	if m != nil && m.Ctime != nil {
 		return *m.Ctime
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetContents() *FileMap {
+func (m *NodeMetadata) GetContents() *FileMap {
 	if m != nil {
 		return m.Contents
 	}
 	return nil
 }
 
-func (m *FileMetadata) GetName() string {
+func (m *NodeMetadata) GetName() string {
 	if m != nil && m.Name != nil {
 		return *m.Name
 	}
 	return ""
 }
 
-func (m *FileMetadata) GetParentFileId() uint64 {
-	if m != nil && m.ParentFileId != nil {
-		return *m.ParentFileId
+func (m *NodeMetadata) GetParentNodeId() uint64 {
+	if m != nil && m.ParentNodeId != nil {
+		return *m.ParentNodeId
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetUid() uint32 {
+func (m *NodeMetadata) GetUid() uint32 {
 	if m != nil && m.Uid != nil {
 		return *m.Uid
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetGid() uint32 {
+func (m *NodeMetadata) GetGid() uint32 {
 	if m != nil && m.Gid != nil {
 		return *m.Gid
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetNlink() uint32 {
+func (m *NodeMetadata) GetNlink() uint32 {
 	if m != nil && m.Nlink != nil {
 		return *m.Nlink
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetMode() uint32 {
+func (m *NodeMetadata) GetMode() uint32 {
 	if m != nil && m.Mode != nil {
 		return *m.Mode
 	}
 	return 0
 }
 
-func (m *FileMetadata) GetSymlink() []byte {
+func (m *NodeMetadata) GetSymlink() []byte {
 	if m != nil {
 		return m.Symlink
 	}

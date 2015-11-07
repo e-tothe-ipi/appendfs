@@ -14,6 +14,20 @@ import (
 )
 
 
+type AppendFS struct {
+	root *AppendFSNode
+	blockSize uint32
+	dataMutex sync.RWMutex
+	dataFile io.ReadWriter
+	dataFileOffset int
+	dataFilePath string
+	nodeIdMutex sync.RWMutex
+	lastNodeId uint64
+	metadataMutex sync.RWMutex
+	metadataFile io.ReadWriteSeeker
+	metadataFilePath string
+}
+
 func NewAppendFS(dataFilePath string, metadataFilePath string) (*AppendFS, error) {
 	fs := &AppendFS{}
 	fs.blockSize = 4096
@@ -37,32 +51,21 @@ func NewAppendFS(dataFilePath string, metadataFilePath string) (*AppendFS, error
 	fs.root = CreateNode(nil)
 	fs.root.attr.Mode = fuse.S_IFDIR | 0755
 	fs.root.attr.Nlink = 2
+	fs.root.fs = fs
+	fs.root.nodeId = fs.NextNodeId()
 	return fs, nil
 }
 
-type AppendFS struct {
-	root *AppendFSNode
-	blockSize uint32
-	dataMutex sync.RWMutex
-	dataFile io.ReadWriter
-	dataFileOffset int
-	dataFilePath string
-	fileIdMutex sync.RWMutex
-	lastFileId uint64
-	metadataMutex sync.RWMutex
-	metadataFile io.ReadWriteSeeker
-	metadataFilePath string
-}
 
 func (fs *AppendFS) Root() *AppendFSNode {
 	return fs.root
 }
 
-func (fs *AppendFS) NextFileId() uint64 {
-	fs.fileIdMutex.Lock()
-	fs.lastFileId += 1
-	out := fs.lastFileId
-	fs.fileIdMutex.Unlock()
+func (fs *AppendFS) NextNodeId() uint64 {
+	fs.nodeIdMutex.Lock()
+	fs.lastNodeId += 1
+	out := fs.lastNodeId
+	fs.nodeIdMutex.Unlock()
 	return out
 }
 
@@ -75,7 +78,7 @@ func (fs *AppendFS) AppendData(data []byte) (int, error) {
 	return pos, err
 }
 
-func (fs *AppendFS) AppendMetadata(metadata *messages.FileMetadata) error {
+func (fs *AppendFS) AppendMetadata(metadata *messages.NodeMetadata) error {
 	data, err := proto.Marshal(metadata)
 	if err != nil {
 		return err
@@ -96,7 +99,7 @@ func (fs *AppendFS) AppendMetadata(metadata *messages.FileMetadata) error {
 func (fs *AppendFS) LoadMetadata() error {
 	err := (error)(nil)
 	fs.metadataMutex.Lock()
-	nodes := make(map[uint64]*messages.FileMetadata)
+	nodes := make(map[uint64]*messages.NodeMetadata)
 	children := make(map[uint64][]uint64)
 	_, err = fs.metadataFile.Seek(0, 0)
 	if err != nil {
@@ -120,24 +123,24 @@ func (fs *AppendFS) LoadMetadata() error {
 		if err != nil {
 			goto Finally
 		}
-		metadata := &messages.FileMetadata{}
+		metadata := &messages.NodeMetadata{}
 		err = proto.Unmarshal(msgBuf, metadata)
 		if err != nil {
 			goto Finally
 		}
-		fmt.Printf("Read nodeId:%d parentNodeId:%d\n", metadata.GetFileId(), metadata.GetParentFileId())
-		if currentNode, ok := nodes[metadata.GetFileId()]; ok {
+		fmt.Printf("Read nodeId:%d parentNodeId:%d\n", metadata.GetNodeId(), metadata.GetParentNodeId())
+		if currentNode, ok := nodes[metadata.GetNodeId()]; ok {
 			proto.Merge(currentNode, metadata)
 		} else {
-			nodes[metadata.GetFileId()] = metadata
+			nodes[metadata.GetNodeId()] = metadata
 		}
 	}
 	for id, node := range nodes {
-		if node.ParentFileId != nil {
-			if currentChildren, ok := children[node.GetParentFileId()]; ok {
-				children[node.GetParentFileId()] = append(currentChildren, id)
+		if node.ParentNodeId != nil {
+			if currentChildren, ok := children[node.GetParentNodeId()]; ok {
+				children[node.GetParentNodeId()] = append(currentChildren, id)
 			} else {
-				children[node.GetParentFileId()] = append(make([]uint64, 0), id)
+				children[node.GetParentNodeId()] = append(make([]uint64, 0), id)
 			}
 		} else {
 			err = errors.New("Corrupt metadata: missing ParentFileId for file " + string(id))
@@ -152,14 +155,14 @@ func (fs *AppendFS) LoadMetadata() error {
 	return err
 }
 
-func (fs *AppendFS) addChildrenHelper(nodes map[uint64]*messages.FileMetadata, children map[uint64][]uint64, currentNode *AppendFSNode) {
-	fileId := currentNode.fileId
-	fmt.Printf("Adding Children for node %d\n", fileId)
-	if nodeChildren, ok := children[fileId]; ok {
+func (fs *AppendFS) addChildrenHelper(nodes map[uint64]*messages.NodeMetadata, children map[uint64][]uint64, currentNode *AppendFSNode) {
+	nodeId := currentNode.nodeId
+	fmt.Printf("Adding Children for node %d\n", nodeId)
+	if nodeChildren, ok := children[nodeId]; ok {
 		newChildren := make([]*AppendFSNode, 0)
 		for _, childId := range nodeChildren {
 			childMetadata := nodes[childId]
-			child := FromFileMetadata(fs, childMetadata)
+			child := FromNodeMetadata(fs, childMetadata)
 			currentNode.Inode().NewChild(child.name, child.attr.IsDir(), child)
 			newChildren = append(newChildren, child)
 		}

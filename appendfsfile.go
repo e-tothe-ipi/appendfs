@@ -80,7 +80,7 @@ func (f *AppendFSFile) Release() {
 
 func (f *AppendFSFile) Fsync(flags int) (code fuse.Status) {
 	if(f.Dirty()) {
-		metadata := &messages.FileMetadata{FileId:&f.node.fileId,
+		metadata := &messages.NodeMetadata{NodeId:&f.node.nodeId,
 											Contents:&messages.FileMap{},
 											Size:&f.node.attr.Size}
 		rlEntries := f.node.contentRanges.InRange(0, int(f.node.attr.Size))
@@ -89,7 +89,7 @@ func (f *AppendFSFile) Fsync(flags int) (code fuse.Status) {
 			if fData, ok := entry.Data.(fileSegmentEntry); ok {
 				newEntry := &messages.FileMapEntry{Start:proto.Uint64(uint64(entry.Min)),
 													End:proto.Uint64(uint64(entry.Max)),
-													Base:proto.Uint64(uint64(fData.fileOffset))}
+													Base:proto.Uint64(uint64(fData.base))}
 				metadata.Contents.Entry = append(metadata.Contents.Entry, newEntry)
 			}
 		}
