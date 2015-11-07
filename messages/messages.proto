@@ -14,6 +14,7 @@ message NodeMetadata {
 	optional uint32  nlink = 24;
 	optional uint32  mode = 25;
 	optional bytes   symlink = 26;
+	optional bool    valid = 27;
 }
 
 message FileMap {

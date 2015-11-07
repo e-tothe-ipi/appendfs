@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"io"
 	"fmt"
+	"bufio"
 
 	"github.com/hanwen/go-fuse/fuse"
 	"github.com/golang/protobuf/proto"
@@ -69,6 +70,12 @@ func (fs *AppendFS) NextNodeId() uint64 {
 	return out
 }
 
+func (fs *AppendFS) seenNodeId(lastNodeId uint64) {
+	if lastNodeId > fs.lastNodeId {
+		fs.lastNodeId = lastNodeId
+	}
+}
+
 func (fs *AppendFS) AppendData(data []byte) (int, error) {
 	fs.dataMutex.Lock()
 	pos := fs.dataFileOffset
@@ -83,12 +90,12 @@ func (fs *AppendFS) AppendMetadata(metadata *messages.NodeMetadata) error {
 	if err != nil {
 		return err
 	}
-	if len(data) > 65535 {
-		return errors.New("Metadata too large")
-	}
-	n := uint16(len(data))
+	n := uint64(len(data))
+	nBuf := make([]byte, 12)
+	nBufLen := binary.PutUvarint(nBuf, n)
+	nBuf = nBuf[:nBufLen]
 	fs.metadataMutex.Lock()
-	err = binary.Write(fs.metadataFile, binary.BigEndian, n)
+	_, err = fs.metadataFile.Write(nBuf)
 	if err == nil {
 		_, err = fs.metadataFile.Write(data)
 	}
@@ -97,45 +104,56 @@ func (fs *AppendFS) AppendMetadata(metadata *messages.NodeMetadata) error {
 }
 
 func (fs *AppendFS) LoadMetadata() error {
-	err := (error)(nil)
+	ret := (error)(nil)
 	fs.metadataMutex.Lock()
 	nodes := make(map[uint64]*messages.NodeMetadata)
 	children := make(map[uint64][]uint64)
-	_, err = fs.metadataFile.Seek(0, 0)
+	_, err := fs.metadataFile.Seek(0, 0)
+	bufferedReader := bufio.NewReader(fs.metadataFile)
 	if err != nil {
+		ret = err
 		goto Finally
 	}
 	for {
-		var msgLen uint16
-		err = binary.Read(fs.metadataFile, binary.BigEndian, &msgLen)
+		msgLen, err := binary.ReadUvarint(bufferedReader)
 		if err != nil {
 			// EOF is ok here
 			if err == io.EOF {
 				fmt.Println("Reached expected EOF")
-				err = nil
 				break
 			}
+			ret = err
 			goto Finally
 		}
-		fmt.Printf("MsgLen: %d\n", msgLen)
 		msgBuf := make([]byte, msgLen)
-		_, err = fs.metadataFile.Read(msgBuf)
+		//fmt.Printf("MsgLen: %d\n", msgLen)
+		_, err = io.ReadAtLeast(bufferedReader, msgBuf, int(msgLen))
 		if err != nil {
+			ret = err
 			goto Finally
 		}
 		metadata := &messages.NodeMetadata{}
 		err = proto.Unmarshal(msgBuf, metadata)
 		if err != nil {
+			ret = err
 			goto Finally
 		}
-		fmt.Printf("Read nodeId:%d parentNodeId:%d\n", metadata.GetNodeId(), metadata.GetParentNodeId())
 		if currentNode, ok := nodes[metadata.GetNodeId()]; ok {
+			if metadata.Contents != nil {
+				currentNode.Contents = nil
+			}
 			proto.Merge(currentNode, metadata)
+			//fmt.Printf("Merged %d\n", currentNode.GetNodeId())
 		} else {
 			nodes[metadata.GetNodeId()] = metadata
+			//fmt.Printf("Added %d\n", metadata.GetNodeId())
 		}
 	}
 	for id, node := range nodes {
+		fs.seenNodeId(id)
+		if !node.GetValid() {
+			continue
+		}
 		if node.ParentNodeId != nil {
 			if currentChildren, ok := children[node.GetParentNodeId()]; ok {
 				children[node.GetParentNodeId()] = append(currentChildren, id)
@@ -143,7 +161,7 @@ func (fs *AppendFS) LoadMetadata() error {
 				children[node.GetParentNodeId()] = append(make([]uint64, 0), id)
 			}
 		} else {
-			err = errors.New("Corrupt metadata: missing ParentFileId for file " + string(id))
+			ret = errors.New("Corrupt metadata: missing ParentFileId for file " + string(id))
 			goto Finally
 		}
 	}
@@ -152,7 +170,7 @@ func (fs *AppendFS) LoadMetadata() error {
 
 	Finally:
 	fs.metadataMutex.Unlock()
-	return err
+	return  ret
 }
 
 func (fs *AppendFS) addChildrenHelper(nodes map[uint64]*messages.NodeMetadata, children map[uint64][]uint64, currentNode *AppendFSNode) {

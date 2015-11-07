@@ -11,6 +11,7 @@ import (
 	"github.com/hanwen/go-fuse/fuse/nodefs"
 	"github.com/e-tothe-ipi/appendfs/messages"
 	"github.com/e-tothe-ipi/appendfs/rangelist"
+	"github.com/golang/protobuf/proto"
 )
 
 type AppendFSNode struct {
@@ -83,7 +84,8 @@ func (node *AppendFSNode) AsNodeMetadata() *messages.NodeMetadata {
 	metadata := &messages.NodeMetadata{NodeId:&node.nodeId, Mode:&node.attr.Mode,
 					Uid:&node.attr.Uid, Gid:&node.attr.Gid, ParentNodeId:&node.parentNodeId,
 					Atime:&node.attr.Atime, Mtime:&node.attr.Mtime, Ctime:&node.attr.Ctime,
-					Name:&node.name, Nlink:&node.attr.Nlink}
+					Name:&node.name, Nlink:&node.attr.Nlink, Symlink:node.symlink,
+					Size:&node.attr.Size, Valid:proto.Bool(true)}
 	return metadata
 }
 
@@ -126,7 +128,8 @@ func (parent *AppendFSNode) Lookup(out *fuse.Attr, name string, context *fuse.Co
 
 func (node *AppendFSNode) Deletable() bool {
 	node.metadataMutex.RLock()
-	deletable := node.attr.Nlink == 0
+	deletable := node.attr.Nlink == 0 ||
+		(node.attr.IsDir() && node.attr.Nlink == 1)
 	node.metadataMutex.RUnlock()
 	return deletable
 }
@@ -187,6 +190,12 @@ func (parent *AppendFSNode) Mkdir(name string, mode uint32, context *fuse.Contex
 	node.name = name
 	inode := parent.inode.NewChild(name, true, node)
 	parent.incrementLinks()
+
+	err := node.fs.AppendMetadata(node.AsNodeMetadata())
+	if err != nil {
+		return nil, fuse.EIO
+	}
+
 	return inode, fuse.OK
 }
 
@@ -197,13 +206,17 @@ func (node *AppendFSNode) Unlink(name string, context *fuse.Context) (code fuse.
 	}
 	if appendfsChild, ok := child.Node().(*AppendFSNode); ok {
 		appendfsChild.decrementLinks()
-		appendfsChild.metadataMutex.RLock()
-		if appendfsChild.attr.Nlink == 0 {
+		if appendfsChild.Deletable(){
 			node.decrementLinks()
 		}
-		appendfsChild.metadataMutex.RUnlock()
+		metadata := &messages.NodeMetadata{NodeId:&appendfsChild.nodeId, Valid:proto.Bool(false)}
+		err := node.fs.AppendMetadata(metadata)
+		if err != nil {
+			return fuse.EIO
+		}
 	}
 	node.Inode().RmChild(name)
+
 	return fuse.OK
 }
 
@@ -223,6 +236,12 @@ func (parent *AppendFSNode) Symlink(name string, content string, context *fuse.C
 	node.name = name
 	parent.Inode().NewChild(name, false, node)
 	parent.incrementLinks()
+
+	err := node.fs.AppendMetadata(node.AsNodeMetadata())
+	if err != nil {
+		return nil, fuse.EIO
+	}
+
 	return node.Inode(), fuse.OK
 }
 
@@ -242,14 +261,7 @@ func (parent *AppendFSNode) Rename(oldName string, newParent nodefs.Node, newNam
 }
 
 func (node *AppendFSNode) Link(name string, existing nodefs.Node, context *fuse.Context) (newNode *nodefs.Inode, code fuse.Status) {
-	if node.Inode().GetChild(name) != nil {
-		return nil, fuse.Status(syscall.EEXIST)
-	}
-	node.Inode().AddChild(name, existing.Inode())
-	if appendfsChild, ok := existing.(*AppendFSNode); ok {
-		appendfsChild.incrementLinks()
-	}
-	return existing.Inode(), fuse.OK
+	return nil, fuse.ENOSYS
 }
 
 

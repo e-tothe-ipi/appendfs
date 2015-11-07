@@ -38,6 +38,7 @@ type NodeMetadata struct {
 	Nlink            *uint32  `protobuf:"varint,24,opt,name=nlink" json:"nlink,omitempty"`
 	Mode             *uint32  `protobuf:"varint,25,opt,name=mode" json:"mode,omitempty"`
 	Symlink          []byte   `protobuf:"bytes,26,opt,name=symlink" json:"symlink,omitempty"`
+	Valid            *bool    `protobuf:"varint,27,opt,name=valid" json:"valid,omitempty"`
 	XXX_unrecognized []byte   `json:"-"`
 }
 
@@ -134,6 +135,13 @@ func (m *NodeMetadata) GetSymlink() []byte {
 		return m.Symlink
 	}
 	return nil
+}
+
+func (m *NodeMetadata) GetValid() bool {
+	if m != nil && m.Valid != nil {
+		return *m.Valid
+	}
+	return false
 }
 
 type FileMap struct {
